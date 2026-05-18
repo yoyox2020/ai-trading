@@ -1,0 +1,61 @@
+version: '3.9'
+
+services:
+  backend:
+    build: ./backend
+    container_name: ai-trading-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - ./backend:/app
+      - ./frontend:/app/frontend
+    restart: unless-stopped
+    networks:
+      - trading-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-trading-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - trading-net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-trading-postgres
+    environment:
+      POSTGRES_DB: trading
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tradingpass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader -d trading"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - trading-net
+
+volumes:
+  postgres_data:
+
+networks:
+  trading-net:
+    driver: bridge

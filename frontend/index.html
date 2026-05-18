@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Trading Bot</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:       #090d14;
+    --card:     #0d1421;
+    --border:   #1a2840;
+    --cyan:     #00d4ff;
+    --green:    #00ff88;
+    --red:      #ff3366;
+    --yellow:   #ffbb00;
+    --text:     #b8cce0;
+    --text-hi:  #e8f4ff;
+    --dim:      #4a6080;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; min-height: 100vh; }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px; border-bottom: 1px solid var(--border);
+    background: #0b1220;
+  }
+  .logo { font-size: 1.1rem; font-weight: bold; color: var(--cyan); letter-spacing: 2px; }
+  .logo span { color: var(--green); }
+  .header-right { display: flex; gap: 10px; align-items: center; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); display: inline-block; }
+  .status-dot.on  { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  .status-dot.off { background: var(--red); }
+  #statusLabel { font-size: 0.8rem; color: var(--dim); margin-left: 6px; }
+  #modeTag { font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; background: #1a2840; color: var(--yellow); border: 1px solid var(--yellow); }
+
+  /* ── Buttons ── */
+  .btn { padding: 7px 18px; border-radius: 6px; border: none; cursor: pointer; font-family: inherit; font-size: 0.85rem; font-weight: bold; transition: all .2s; }
+  .btn-start { background: var(--green); color: #000; }
+  .btn-start:hover { box-shadow: 0 0 12px var(--green); }
+  .btn-stop  { background: var(--red); color: #fff; }
+  .btn-stop:hover  { box-shadow: 0 0 12px var(--red); }
+  .btn-run   { background: var(--cyan); color: #000; }
+  .btn-run:hover   { box-shadow: 0 0 12px var(--cyan); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ── Layout ── */
+  main { padding: 20px 24px; display: grid; gap: 16px; }
+  .row { display: grid; gap: 16px; }
+  .row-3 { grid-template-columns: repeat(3, 1fr); }
+  .row-2 { grid-template-columns: 1fr 1fr; }
+  .row-charts { grid-template-columns: 2fr 1fr; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .card-title { font-size: 0.7rem; color: var(--dim); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 10px; }
+  .card-value { font-size: 2rem; font-weight: bold; color: var(--text-hi); line-height: 1; }
+  .card-sub   { font-size: 0.78rem; color: var(--dim); margin-top: 6px; }
+
+  /* ── Price card ── */
+  #priceValue { color: var(--cyan); transition: color .3s; }
+  #priceValue.up   { color: var(--green); }
+  #priceValue.down { color: var(--red); }
+
+  /* ── Signal card ── */
+  .signal-badge {
+    display: inline-block; padding: 4px 16px; border-radius: 6px;
+    font-size: 1.5rem; font-weight: bold; letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+  .signal-BUY  { background: rgba(0,255,136,.15); color: var(--green); border: 1px solid var(--green); }
+  .signal-SELL { background: rgba(255,51,102,.15);  color: var(--red);   border: 1px solid var(--red); }
+  .signal-HOLD { background: rgba(255,187,0,.1);    color: var(--yellow);border: 1px solid var(--yellow); }
+
+  /* ── AI thinking animation ── */
+  .thinking-ring {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--cyan);
+    display: inline-block; margin-left: 8px; vertical-align: middle;
+    animation: spin .8s linear infinite;
+    opacity: 0; transition: opacity .3s;
+  }
+  .thinking-ring.active { opacity: 1; }
+
+  /* ── Charts ── */
+  .chart-wrap { position: relative; height: 220px; }
+  .chart-wrap-sm { position: relative; height: 140px; }
+
+  /* ── Indicator row ── */
+  .indicator-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .indicator-item { background: #0a1220; border-radius: 6px; padding: 10px 14px; }
+  .ind-label { font-size: 0.68rem; color: var(--dim); letter-spacing: 1px; text-transform: uppercase; }
+  .ind-value { font-size: 1.1rem; font-weight: bold; color: var(--text-hi); margin-top: 4px; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-y: auto; max-height: 220px; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  th { position: sticky; top: 0; background: var(--card); color: var(--dim); padding: 6px 8px; text-align: left; font-weight: normal; border-bottom: 1px solid var(--border); letter-spacing: .5px; }
+  td { padding: 6px 8px; border-bottom: 1px solid #111c2a; color: var(--text); }
+  tr:hover td { background: #0f1a2a; }
+  .side-buy  { color: var(--green); font-weight: bold; }
+  .side-sell { color: var(--red);   font-weight: bold; }
+  .pnl-pos   { color: var(--green); }
+  .pnl-neg   { color: var(--red);   }
+
+  /* ── Backtest panel ── */
+  .bt-inputs { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .bt-inputs input {
+    background: #0a1220; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text-hi); padding: 7px 12px; font-family: inherit; font-size: 0.85rem; width: 150px;
+  }
+  .bt-results { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .bt-stat { background: #0a1220; border-radius: 6px; padding: 12px; text-align: center; }
+  .bt-stat-label { font-size: 0.68rem; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .bt-stat-value { font-size: 1.2rem; font-weight: bold; color: var(--text-hi); margin-top: 4px; }
+
+  /* ── WS status bar ── */
+  .ws-bar { font-size: 0.72rem; color: var(--dim); padding: 6px 24px; border-top: 1px solid var(--border); background: #0b1220; }
+  .ws-bar span { color: var(--cyan); }
+
+  /* ── Animations ── */
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  @keyframes spin  { to{transform:rotate(360deg)} }
+  @keyframes flash { 0%{opacity:1} 50%{opacity:.3} 100%{opacity:1} }
+  .flash { animation: flash .4s ease; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">AI<span>TRADE</span>BOT &nbsp;●&nbsp; <span id="symbolLabel">BTCUSDT</span></div>
+  <div class="header-right">
+    <span id="modeTag">DEMO</span>
+    <span class="status-dot off" id="statusDot"></span>
+    <span id="statusLabel">Offline</span>
+    <button class="btn btn-start" id="btnStart" onclick="botStart()">▶ Start</button>
+    <button class="btn btn-stop"  id="btnStop"  onclick="botStop()"  disabled>■ Stop</button>
+  </div>
+</header>
+
+<!-- Main -->
+<main>
+
+  <!-- Row 1: Price / Signal / Balance -->
+  <div class="row row-3">
+    <div class="card">
+      <div class="card-title">Live Price</div>
+      <div class="card-value" id="priceValue">—</div>
+      <div class="card-sub" id="priceSub">Fetching…</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">AI Signal <span class="thinking-ring" id="thinkRing"></span></div>
+      <div>
+        <span class="signal-badge signal-HOLD" id="signalBadge">HOLD</span>
+      </div>
+      <div class="card-sub" id="signalReason">—</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Balance</div>
+      <div class="card-value" id="balanceValue">—</div>
+      <div class="card-sub" id="balanceSub">Open positions: <span id="posCount">0</span></div>
+    </div>
+  </div>
+
+  <!-- Row 2: Price chart + Indicators -->
+  <div class="row row-charts">
+    <div class="card">
+      <div class="card-title">Price History (last 100 candles, 1 min)</div>
+      <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Indicators</div>
+      <div class="indicator-grid">
+        <div class="indicator-item">
+          <div class="ind-label">RSI (14)</div>
+          <div class="ind-value" id="rsiValue">—</div>
+        </div>
+        <div class="indicator-item">
+          <div class="ind-label">MACD</div>
+          <div class="ind-value" id="macdValue">—</div>
+        </div>
+        <div class="indicator-item">
+          <div class="ind-label">Signal Line</div>
+          <div class="ind-value" id="macdSig">—</div>
+        </div>
+        <div class="indicator-item">
+          <div class="ind-label">Histogram</div>
+          <div class="ind-value" id="macdHist">—</div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px">
+        <div class="card-title">RSI Gauge</div>
+        <div class="chart-wrap-sm"><canvas id="rsiChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Positions + Trade Log -->
+  <div class="row row-2">
+    <div class="card">
+      <div class="card-title">Open Positions</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Side</th><th>Price</th><th>Qty</th><th>SL</th><th>TP</th></tr></thead>
+          <tbody id="posTable"><tr><td colspan="5" style="color:var(--dim);text-align:center">No open positions</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Trade Log</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Side</th><th>Price</th><th>Qty</th><th>Status</th></tr></thead>
+          <tbody id="tradeTable"><tr><td colspan="5" style="color:var(--dim);text-align:center">No trades yet</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 4: Backtesting -->
+  <div class="card">
+    <div class="card-title">Backtesting Simulator</div>
+    <div class="bt-inputs">
+      <label style="color:var(--dim);font-size:.8rem">Initial Balance $</label>
+      <input type="number" id="btBalance" value="10000" min="100" />
+      <label style="color:var(--dim);font-size:.8rem">Interval (min)</label>
+      <input type="number" id="btInterval" value="60" min="1" />
+      <button class="btn btn-run" id="btnBt" onclick="runBacktest()">Run Backtest</button>
+      <span id="btStatus" style="font-size:.8rem;color:var(--dim)"></span>
+    </div>
+    <div class="bt-results" id="btResults" style="display:none">
+      <div class="bt-stat"><div class="bt-stat-label">Final Balance</div><div class="bt-stat-value" id="btFinal">—</div></div>
+      <div class="bt-stat"><div class="bt-stat-label">P&L</div><div class="bt-stat-value" id="btPnl">—</div></div>
+      <div class="bt-stat"><div class="bt-stat-label">Win Rate</div><div class="bt-stat-value" id="btWin">—</div></div>
+      <div class="bt-stat"><div class="bt-stat-label">Max Drawdown</div><div class="bt-stat-value" id="btDd">—</div></div>
+      <div class="bt-stat"><div class="bt-stat-label">Total Trades</div><div class="bt-stat-value" id="btTotal">—</div></div>
+      <div class="bt-stat"><div class="bt-stat-label">Winners</div><div class="bt-stat-value" id="btWinners" style="color:var(--green)">—</div></div>
+      <div class="bt-stat"><div class="bt-stat-label">Losers</div><div class="bt-stat-value" id="btLosers" style="color:var(--red)">—</div></div>
+      <div class="bt-stat"><div class="bt-stat-label">Return %</div><div class="bt-stat-value" id="btPct">—</div></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- WS status bar -->
+<div class="ws-bar">WebSocket: <span id="wsStatus">connecting…</span> &nbsp;|&nbsp; Last update: <span id="lastUpdate">—</span></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const API = '';
+let ws, wsRetries = 0;
+let priceHistory = [];
+let rsiHistory   = [];
+const MAX_HIST = 100;
+let prevPrice = null;
+let tradeLogData = [];
+
+// ── Chart: Price ───────────────────────────────────────────────────────────
+const priceCtx = document.getElementById('priceChart').getContext('2d');
+const priceChart = new Chart(priceCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Price',
+      data: [],
+      borderColor: '#00d4ff',
+      backgroundColor: 'rgba(0,212,255,.06)',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.3,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    animation: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: {
+        ticks: { color: '#4a6080', font: { size: 10 }, callback: v => '$' + v.toLocaleString() },
+        grid: { color: '#1a2840' },
+      }
+    }
+  }
+});
+
+// ── Chart: RSI ─────────────────────────────────────────────────────────────
+const rsiCtx = document.getElementById('rsiChart').getContext('2d');
+const rsiChart = new Chart(rsiCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      {
+        label: 'RSI',
+        data: [],
+        borderColor: '#ffbb00',
+        backgroundColor: 'rgba(255,187,0,.06)',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.3,
+      },
+      {
+        label: 'OB',
+        data: [],
+        borderColor: 'rgba(255,51,102,.4)',
+        borderDash: [4, 4],
+        borderWidth: 1,
+        pointRadius: 0,
+        fill: false,
+      },
+      {
+        label: 'OS',
+        data: [],
+        borderColor: 'rgba(0,255,136,.4)',
+        borderDash: [4, 4],
+        borderWidth: 1,
+        pointRadius: 0,
+        fill: false,
+      }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    animation: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0, max: 100,
+        ticks: { color: '#4a6080', font: { size: 10 } },
+        grid: { color: '#1a2840' },
+      }
+    }
+  }
+});
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    wsRetries = 0;
+    document.getElementById('wsStatus').textContent = 'connected';
+    document.getElementById('wsStatus').style.color = 'var(--green)';
+  };
+
+  ws.onmessage = e => {
+    try { handleUpdate(JSON.parse(e.data)); } catch(_) {}
+  };
+
+  ws.onclose = () => {
+    document.getElementById('wsStatus').textContent = 'reconnecting…';
+    document.getElementById('wsStatus').style.color = 'var(--yellow)';
+    setTimeout(connectWS, Math.min(3000 * (++wsRetries), 30000));
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// ── Handle incoming update ─────────────────────────────────────────────────
+function handleUpdate(d) {
+  // AI thinking flash
+  const ring = document.getElementById('thinkRing');
+  ring.classList.add('active');
+  setTimeout(() => ring.classList.remove('active'), 600);
+
+  // Price
+  if (d.price) updatePrice(d.price);
+
+  // Signal
+  if (d.signal) updateSignal(d.signal, d.rsi, d.macd, d.reason);
+
+  // Balance
+  if (d.balance != null) {
+    document.getElementById('balanceValue').textContent = '$' + (+d.balance).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  // Trade executed
+  if (d.trade_executed) addTradeRow(d.trade_executed, true);
+
+  // Last update
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+
+  // Bot status
+  updateBotStatus(d.bot_status === 'running');
+}
+
+function updatePrice(price) {
+  const el = document.getElementById('priceValue');
+  const prev = prevPrice;
+  prevPrice = price;
+  el.textContent = '$' + (+price).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  if (prev) {
+    el.classList.remove('up','down','flash');
+    void el.offsetWidth;
+    el.classList.add(price > prev ? 'up' : 'down', 'flash');
+  }
+  const now = new Date().toLocaleTimeString('en', {hour12:false});
+  priceHistory.push({t: now, v: price});
+  if (priceHistory.length > MAX_HIST) priceHistory.shift();
+  priceChart.data.labels    = priceHistory.map(p => p.t);
+  priceChart.data.datasets[0].data = priceHistory.map(p => p.v);
+  priceChart.update('none');
+}
+
+function updateSignal(signal, rsi, macd, reason) {
+  const badge = document.getElementById('signalBadge');
+  badge.className = 'signal-badge signal-' + signal;
+  badge.textContent = signal;
+  document.getElementById('signalReason').textContent = reason || '—';
+
+  // Indicators
+  if (rsi != null) {
+    const rv = document.getElementById('rsiValue');
+    rv.textContent = (+rsi).toFixed(2);
+    rv.style.color = rsi < 30 ? 'var(--green)' : rsi > 70 ? 'var(--red)' : 'var(--text-hi)';
+
+    rsiHistory.push(+rsi);
+    if (rsiHistory.length > MAX_HIST) rsiHistory.shift();
+    const labels = rsiHistory.map((_, i) => i);
+    rsiChart.data.labels = labels;
+    rsiChart.data.datasets[0].data = rsiHistory;
+    rsiChart.data.datasets[1].data = labels.map(() => 70);
+    rsiChart.data.datasets[2].data = labels.map(() => 30);
+    rsiChart.update('none');
+  }
+
+  if (macd) {
+    const sign = v => v >= 0 ? '+' : '';
+    document.getElementById('macdValue').textContent = sign(macd.macd) + (+macd.macd).toFixed(6);
+    document.getElementById('macdSig').textContent   = sign(macd.signal) + (+macd.signal).toFixed(6);
+    const hEl = document.getElementById('macdHist');
+    hEl.textContent  = sign(macd.histogram) + (+macd.histogram).toFixed(6);
+    hEl.style.color  = macd.histogram >= 0 ? 'var(--green)' : 'var(--red)';
+  }
+}
+
+function updateBotStatus(running) {
+  document.getElementById('statusDot').className = 'status-dot ' + (running ? 'on' : 'off');
+  document.getElementById('statusLabel').textContent = running ? 'Running' : 'Stopped';
+  document.getElementById('btnStart').disabled = running;
+  document.getElementById('btnStop').disabled  = !running;
+}
+
+// ── Positions table ────────────────────────────────────────────────────────
+async function refreshPositions() {
+  const r = await fetch('/api/positions');
+  const data = await r.json();
+  const positions = data.positions || [];
+  document.getElementById('posCount').textContent = positions.length;
+  const tbody = document.getElementById('posTable');
+  if (!positions.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--dim);text-align:center">No open positions</td></tr>';
+    return;
+  }
+  tbody.innerHTML = positions.map(p => `
+    <tr>
+      <td class="side-${p.side.toLowerCase()}">${p.side}</td>
+      <td>$${(+p.price).toFixed(2)}</td>
+      <td>${(+p.quantity).toFixed(6)}</td>
+      <td style="color:var(--red)">$${(+p.stop_loss).toFixed(2)}</td>
+      <td style="color:var(--green)">$${(+p.take_profit).toFixed(2)}</td>
+    </tr>`).join('');
+}
+
+// ── Trade log ──────────────────────────────────────────────────────────────
+function addTradeRow(trade, prepend = false) {
+  const tbody = document.getElementById('tradeTable');
+  if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+  const side = (trade.side || '').toUpperCase();
+  const ts   = new Date().toLocaleTimeString('en', {hour12:false});
+  const row  = `<tr>
+    <td>${ts}</td>
+    <td class="side-${side.toLowerCase()}">${side}</td>
+    <td>$${(+trade.price).toFixed(2)}</td>
+    <td>${(+trade.quantity).toFixed(6)}</td>
+    <td>${trade.status || 'open'}</td>
+  </tr>`;
+  if (prepend) tbody.insertAdjacentHTML('afterbegin', row);
+  else tbody.insertAdjacentHTML('beforeend', row);
+}
+
+async function loadTrades() {
+  const r = await fetch('/api/trades');
+  const data = await r.json();
+  const trades = data.trades || [];
+  if (!trades.length) return;
+  document.getElementById('tradeTable').innerHTML = '';
+  trades.forEach(t => addTradeRow(t, false));
+}
+
+// ── Bot controls ───────────────────────────────────────────────────────────
+async function botStart() {
+  document.getElementById('btnStart').disabled = true;
+  const r = await fetch('/api/start', {method:'POST'});
+  const d = await r.json();
+  if (!d.success) { alert(d.message); document.getElementById('btnStart').disabled = false; }
+  else updateBotStatus(true);
+}
+
+async function botStop() {
+  document.getElementById('btnStop').disabled = true;
+  const r = await fetch('/api/stop', {method:'POST'});
+  const d = await r.json();
+  if (!d.success) { alert(d.message); document.getElementById('btnStop').disabled = false; }
+  else updateBotStatus(false);
+}
+
+// ── Backtesting ────────────────────────────────────────────────────────────
+async function runBacktest() {
+  const bal  = document.getElementById('btBalance').value  || 10000;
+  const intv = document.getElementById('btInterval').value || 60;
+  const btn  = document.getElementById('btnBt');
+  const st   = document.getElementById('btStatus');
+  btn.disabled = true;
+  st.textContent = 'Running… (fetching 500 candles)';
+  document.getElementById('btResults').style.display = 'none';
+
+  try {
+    const r = await fetch(`/api/backtest?symbol=BTCUSDT&initial_balance=${bal}&interval=${intv}`, {method:'POST'});
+    const d = await r.json();
+    if (d.error) { st.textContent = 'Error: ' + d.error; return; }
+
+    const pnlColor = d.profit_loss >= 0 ? 'var(--green)' : 'var(--red)';
+    document.getElementById('btFinal').textContent   = '$' + (+d.final_balance).toFixed(2);
+    document.getElementById('btPnl').textContent     = (d.profit_loss >= 0 ? '+' : '') + '$' + (+d.profit_loss).toFixed(2);
+    document.getElementById('btPnl').style.color     = pnlColor;
+    document.getElementById('btWin').textContent     = d.win_rate + '%';
+    document.getElementById('btWin').style.color     = d.win_rate >= 50 ? 'var(--green)' : 'var(--red)';
+    document.getElementById('btDd').textContent      = d.max_drawdown + '%';
+    document.getElementById('btTotal').textContent   = d.total_trades;
+    document.getElementById('btWinners').textContent = d.winning_trades;
+    document.getElementById('btLosers').textContent  = d.losing_trades;
+    document.getElementById('btPct').textContent     = (d.profit_loss_pct >= 0 ? '+' : '') + d.profit_loss_pct + '%';
+    document.getElementById('btPct').style.color     = pnlColor;
+
+    document.getElementById('btResults').style.display = 'grid';
+    st.textContent = `Done — ${d.candles_used} candles analysed`;
+  } catch(e) {
+    st.textContent = 'Request failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+async function init() {
+  // Load initial price history for chart
+  try {
+    const r = await fetch('/api/price-history?interval=1&limit=100');
+    const d = await r.json();
+    if (d.prices && d.prices.length) {
+      d.prices.forEach((p, i) => {
+        priceHistory.push({t: String(i), v: p});
+      });
+      priceChart.data.labels    = priceHistory.map(p => p.t);
+      priceChart.data.datasets[0].data = priceHistory.map(p => p.v);
+      priceChart.update('none');
+      prevPrice = d.prices[d.prices.length - 1];
+      document.getElementById('priceValue').textContent =
+        '$' + (+prevPrice).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+  } catch(_) {}
+
+  // Load bot status
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    updateBotStatus(d.bot_running);
+    if (d.demo_mode) document.getElementById('modeTag').textContent = 'DEMO';
+    else document.getElementById('modeTag').textContent = 'LIVE';
+    if (d.symbol) document.getElementById('symbolLabel').textContent = d.symbol;
+  } catch(_) {}
+
+  await loadTrades();
+  await refreshPositions();
+  setInterval(refreshPositions, 15000);
+
+  connectWS();
+}
+
+init();
+</script>
+</body>
+</html>
