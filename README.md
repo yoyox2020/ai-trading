@@ -13,7 +13,7 @@ AI Trading Bot System:
 - Backtesting simulator ✅
 
 ---
-
+<p>
 # 🏗️ Architecture
 ai-trading-system/
 ├── backend/app/
@@ -28,7 +28,7 @@ ai-trading-system/
 ├── frontend/
 ├── docker-compose.yml
 └── README.md
-
+</p>
 ---
 
 # 📊 Trading Strategy
