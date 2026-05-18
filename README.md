@@ -1,5 +1,5 @@
 # 🚀 AI Trading Bot System (Full Stack + Risk Engine + Backtesting)
-## @youyou
+## by@youyou
 ---
 
 ## 📌 Overview
