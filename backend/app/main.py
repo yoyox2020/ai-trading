@@ -8,12 +8,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import SYMBOL, DEMO_MODE
-from .database import init_db, get_recent_trades
+from .config import SYMBOLS
+from .database import init_db, get_recent_alerts, close as close_db
 from .redis_client import get_redis, get_value, close as close_redis
-from .trading import start_bot, stop_bot, is_running
-from .backtest import run_backtest
-from .bybit_client import get_ticker_price, get_klines
+from .alert_engine import start_engine, stop_engine, is_running
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,16 +26,15 @@ _ws_clients: list[WebSocket] = []
 async def lifespan(app: FastAPI):
     await init_db()
     asyncio.create_task(_redis_broadcast())
-    logger.info(f"App ready — demo_mode={DEMO_MODE} symbol={SYMBOL}")
+    logger.info(f"App ready — monitoring {SYMBOLS}")
     yield
-    await stop_bot()
+    await stop_engine()
+    await close_db()
     await close_redis()
 
 
-app = FastAPI(title="AI Trading Bot", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Crypto Analysis Bot", version="2.0.0", lifespan=lifespan)
 
-
-# ── WebSocket broadcast via Redis pub/sub ───────────────────────────────────
 
 async def _redis_broadcast():
     r = await get_redis()
@@ -64,10 +61,9 @@ async def _redis_broadcast():
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     _ws_clients.append(websocket)
-    # push current state immediately so the dashboard loads fast
-    state = await get_value("trading:state")
+    state = await get_value("analysis:state")
     if state:
-        await websocket.send_text(json.dumps(state))
+        await websocket.send_text(json.dumps(state) if not isinstance(state, str) else state)
     try:
         while True:
             await websocket.receive_text()
@@ -76,68 +72,41 @@ async def websocket_endpoint(websocket: WebSocket):
             _ws_clients.remove(websocket)
 
 
-# ── REST endpoints ───────────────────────────────────────────────────────────
-
 @app.get("/api/status")
 async def api_status():
-    state = await get_value("trading:state") or {}
     return {
-        "bot_running": is_running(),
-        "demo_mode": DEMO_MODE,
-        "symbol": SYMBOL,
-        "current_price": state.get("price"),
-        "signal": state.get("signal", "HOLD"),
-        "balance": state.get("balance"),
-        "last_update": state.get("timestamp"),
+        "running": is_running(),
+        "symbols": SYMBOLS,
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
-@app.get("/api/price")
-async def api_price():
-    price = await get_ticker_price(SYMBOL)
-    return {"symbol": SYMBOL, "price": price, "timestamp": datetime.utcnow().isoformat()}
+@app.get("/api/analysis")
+async def api_analysis():
+    state = await get_value("analysis:state") or {}
+    return state
 
 
-@app.get("/api/price-history")
-async def api_price_history(interval: str = "1", limit: int = 100):
-    prices = await get_klines(SYMBOL, interval=interval, limit=limit)
-    return {"symbol": SYMBOL, "prices": prices, "interval": interval}
-
-
-@app.get("/api/trades")
-async def api_trades():
-    trades = await get_recent_trades(50)
-    return {"trades": trades}
-
-
-@app.get("/api/positions")
-async def api_positions():
-    positions = await get_value("trading:positions") or []
-    return {"positions": positions}
+@app.get("/api/alerts")
+async def api_alerts():
+    alerts = await get_recent_alerts(50)
+    return {"alerts": alerts}
 
 
 @app.post("/api/start")
 async def api_start():
-    return await start_bot()
+    return await start_engine()
 
 
 @app.post("/api/stop")
 async def api_stop():
-    return await stop_bot()
-
-
-@app.post("/api/backtest")
-async def api_backtest(symbol: str = SYMBOL, initial_balance: float = 10000.0, interval: str = "60"):
-    result = await run_backtest(symbol, initial_balance, lookback=500, interval=interval)
-    return result
+    return await stop_engine()
 
 
 @app.get("/api/health")
 async def api_health():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
-
-# ── Serve frontend ───────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory="/app/frontend"), name="static")
 
